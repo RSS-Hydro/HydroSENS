@@ -26,13 +26,13 @@ def load_Sentinel2(aoi, StartDate, EndDate):
     filtered_col1 = ee.ImageCollection('COPERNICUS/S2_SR')\
         .filterDate(StartDate,EndDate)\
         .filterBounds(aoi) \
-        .filterMetadata('CLOUDY_PIXEL_PERCENTAGE','less_than', 70)\
+        .filterMetadata('CLOUDY_PIXEL_PERCENTAGE','less_than', 10)\
         .sort('CLOUDY_PIXEL_PERCENTAGE')\
         .select('B2', 'B3', 'B4', 'B7', 'B8', 'B8A', 'B11', 'B12')
     filtered_col2 = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')\
         .filterDate(StartDate,EndDate)\
         .filterBounds(aoi) \
-        .filterMetadata('CLOUDY_PIXEL_PERCENTAGE','less_than', 70)\
+        .filterMetadata('CLOUDY_PIXEL_PERCENTAGE','less_than', 10)\
         .sort('CLOUDY_PIXEL_PERCENTAGE')\
         .select('B2', 'B3', 'B4', 'B7', 'B8', 'B8A', 'B11', 'B12')
     merged = filtered_col1.merge(filtered_col2)
@@ -45,7 +45,7 @@ def load_Landsat(aoi, StartDate, EndDate):
     filtered_col1 = ee.ImageCollection('LANDSAT/LC08/C02/T1_L2')\
         .filterDate(StartDate,EndDate)\
         .filterBounds(aoi) \
-        .filterMetadata('CLOUD_COVER','less_than', 30)\
+        .filterMetadata('CLOUD_COVER','less_than', 10)\
         .sort('CLOUD_COVER')\
         .select('SR_B2', 'SR_B3', 'SR_B4', 'SR_B5', 'SR_B6', 'SR_B7')
     num_images = filtered_col1.size().getInfo()
