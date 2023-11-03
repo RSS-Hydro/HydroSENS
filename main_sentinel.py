@@ -143,7 +143,6 @@ final = np.rot90(final, k=3, axes=(1, 2))
 soil = final[0]
 impervious = final[1]
 vegetation = final[2]
-# soil, impervious,vegetation  = not_modelled_spots(array1, array2, array3)
 
 del img
 os.remove(output + r"\trimmed_library.csv")
