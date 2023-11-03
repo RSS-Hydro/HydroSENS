@@ -299,37 +299,6 @@ def prepare_sli(fpath, num_bands):
     return class_list, em_spectra.T
 
 
-def not_modelled_spots(arr1, arr2, arr3):
-    """
-     not_modelled_spots
-         This function is used to fill areas with no appropriate MESMA models (where all fractions = 0) by interpolating
-         nearby values. The final arrays are then normalized so that all fractions add up to 1.
-     input:
-         arr1, arr2, arr3: vegetation, impervious, and soil arrays obtained from the MESMA function
-     output:
-         normalized_array1, normalized_array2, normalized_array3: filled and normalized arrays for the final fraction maps
-
-     """
-    filled_array1 = np.copy(arr1)
-    filled_array2 = np.copy(arr2)
-    filled_array3 = np.copy(arr3)
-    # Create the grid of non-zero pixel coordinates and interpolate values for 0 spots
-    zero_indices = np.argwhere((arr1 == 0) & (arr2 == 0) & (arr3 == 0))
-    non_zero_indices = np.argwhere((arr1 != 0) | (arr2 != 0) | (arr3 != 0))
-    x = non_zero_indices[:, 1]
-    y = non_zero_indices[:, 0]
-    # Interpolate the values for zero spots
-    filled_array1[zero_indices[:, 0], zero_indices[:, 1]] = griddata((x, y), arr1[non_zero_indices[:, 0], non_zero_indices[:, 1]], zero_indices, method='nearest')
-    filled_array2[zero_indices[:, 0], zero_indices[:, 1]] = griddata((x, y), arr2[non_zero_indices[:, 0], non_zero_indices[:, 1]], zero_indices, method='nearest')
-    filled_array3[zero_indices[:, 0], zero_indices[:, 1]] = griddata((x, y), arr3[non_zero_indices[:, 0], non_zero_indices[:, 1]], zero_indices, method='nearest')
-    # Normalize each array
-    stacked_array = np.stack((filled_array1, filled_array2, filled_array3))
-    sums = np.sum(stacked_array, axis=0)
-    normalized_array1 = filled_array1 / sums
-    normalized_array2 = filled_array2 / sums
-    normalized_array3 = filled_array3 / sums
-
-    return normalized_array1, normalized_array2, normalized_array3
 
 
 def trimmed_library(fpath, num_bands, row_numbers= None):
@@ -394,7 +363,6 @@ def doMESMA(class_list,img, trim_lib):
 
     # Unmixing one chunk of the image at a time for computational efficiency
     for chunk in range(start_row, img.shape[1], split):
-        start = timeit.default_timer()
         MESMA = mesma.MesmaCore(n_cores=8)
 
         models, fractions, rmse, residuals = MESMA.execute(image=img[:, start_row:start_row + split, :].data,
@@ -412,19 +380,11 @@ def doMESMA(class_list,img, trim_lib):
 
         np.seterr(invalid='ignore')
         out_fractions[:, start_row:start_row + split, :] = fractions
-
         start_row = start_row + split
-
-        stop = timeit.default_timer()
-
-        # Obtain time for each chunk to be unmixed
-        print('Chunk Time: ', stop - start)
-
     total_stop = timeit.default_timer()
-    print(f"Total execution time: {total_stop - total_start:.2f} seconds")
+    print(f"Total unmixing time: {total_stop - total_start:.2f} seconds")
 
     #Perform shade normalization
     out_shade = shade_normalisation.ShadeNormalisation.execute(out_fractions, shade_band=-1)
     return out_shade
-
 
