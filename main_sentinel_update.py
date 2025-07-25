@@ -6,7 +6,6 @@ import glob
 from spectral_libraries.core import amuses
 from datetime import timedelta, datetime
 import sys
-#from Report import *
 import shutil
 import time
 
@@ -26,7 +25,13 @@ def run_hydrosens (main_folder, start_date, end_date, output_master, amc, p):
         process_dates(start_date, end_date, aoi, output_master, amc, p, shapefile_path)
 
 def process_dates(start_date, end_date, aoi, output_master, amc, p, shapefile_path):
-    """Process Sentinel-2 images within a date range if imagery exists."""
+     if isinstance(start_date, str):
+        start_date_dt = datetime.strptime(start_date, '%Y-%m-%d')
+    if isinstance(end_date, str):
+        end_date_dt = datetime.strptime(end_date, '%Y-%m-%d')
+
+    all_weather_data = get_daily_weather(start_date, end_date, aoi)
+
     dates_with_images = []
     vegetation_values = []
     impervious_values = []
@@ -36,33 +41,35 @@ def process_dates(start_date, end_date, aoi, output_master, amc, p, shapefile_pa
     avg_temp = []
     avg_p = []
 
+    date = start_date_dt
+    while date <= end_date_dt:
+        date_str = date.strftime('%Y-%m-%d')
+        print(f"Checking for Sentinel-2 image on: {date_str}")
 
-    if isinstance(start_date, str):
-        start_date = datetime.strptime(start_date, '%Y-%m-%d')
-    if isinstance(end_date, str):
-        end_date = datetime.strptime(end_date, '%Y-%m-%d')
-
-    date = start_date
-
-    while date <= end_date:
-        print(f"Processing for date: {date.strftime('%Y-%m-%d')}")
-        # extract S-2 data
         StartDate = date
         EndDate = StartDate + timedelta(days=1, seconds=-1)
-
         filtered_col, num_images = load_Sentinel2(aoi, StartDate, EndDate)
 
         if num_images == 0:
-            print(f"No images found for {StartDate.strftime('%Y-%m-%d')}. Skipping to next date.")
+            print(f"No S2 image found. Skipping to next date.")
             date += timedelta(days=1)
             continue
 
+        print(f"Image found for {date_str}, beginning processing...")
         dates_with_images.append(date)
         output = create_output_folder(output_master, date)
 
-        print(f"Image found for {date}, creating output folder.")
+        weather_day = all_weather_data.get(date_str)
+        if weather_day:
+            temperature = weather_day['temperature']
+            precipitation = weather_day['precipitation']
+            avg_temp.append(temperature)
+            avg_p.append(precipitation)
+        else:
+            # Handle cases where weather data might be missing for a day
+            avg_temp.append(np.nan)
+            avg_p.append(np.nan)  
 
-        print(f"Processing image from {date}")
 
         dataframe = gpd.read_file(shapefile_path)
         shapefile_pro = dataframe.crs
@@ -71,18 +78,6 @@ def process_dates(start_date, end_date, aoi, output_master, amc, p, shapefile_pa
         DEM = getDEM(aoi)
         Bandsexport(resample_img, shapefile_projection, output, aoi)
         DEMexport(DEM, shapefile_projection, output, aoi)
-
-
-
-        target = CDS_temp(date, output)
-        df = extract_data(target)
-        avg_temp = get_temp(shapefile_path, df)
-
-        target = CDS_precip(date, output)
-        df = extract_p_data(target)
-        avg_p = get_p(shapefile_path, df)
-
-
 
         bands = gdal.Open(output + r"\Bands.tif")
         band_array = bands.ReadAsArray()
@@ -399,11 +394,26 @@ def process_dates(start_date, end_date, aoi, output_master, amc, p, shapefile_pa
 
 
     shapefile_name = os.path.splitext(shapefile_path)[0]
-    output_csv = os.path.join(output_master, shapefile_name + '.csv')
+    if dates_with_images:
+        s2_data = {
+            'date': [d.strftime('%Y-%m-%d') for d in dates_with_images],
+            'veg_mean': vegetation_values,
+            'impervious_mean': impervious_values,
+            'soil_mean': soil_values,
+            'curve_number': curve_number,
+            'ndvi': ndvi_values,
+        }
+        df_s2 = pd.DataFrame(s2_data).dropna()
+        output_s2_csv = os.path.join(output_master, f"{shapefile_name}_s2.csv")
+        df_s2.to_csv(output_s2_csv, index=False)
 
-    df.to_csv(output_csv, index=False)
+    if all_weather_data:
+        df_climate = pd.DataFrame.from_dict(all_weather_data, orient='index')
+        df_climate.index.name = 'date'
+        df_climate.reset_index(inplace=True)
+        output_climate_csv = os.path.join(output_master, f"{shapefile_name}_climate.csv")
+        df_climate.to_csv(output_climate_csv, index=False)
 
-    print(f"Data saved to {output_csv}")
 
     # # Delete extra files
     suffix = "_gcs"
