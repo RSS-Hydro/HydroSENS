@@ -9,68 +9,35 @@ credentials = ee.ServiceAccountCredentials(service_account, r"C:\Users\ben\Pycha
 ee.Initialize(credentials)
 
 
-def get_ERA5_temp(aoi, start_date, end_date):
-    era5_collection = ee.ImageCollection('ECMWF/ERA5/DAILY') \
-        .filterBounds(aoi) \
-        .filterDate(start_date, end_date) \
-        .select('mean_2m_air_temperature') \
-        .map(lambda img: img.subtract(273.15).rename('mean_2m_air_temperature_C'))
-
-    def sample_temperature(img):
-        sampled_point = img.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=aoi,
-            scale=1000,
-            maxPixels=1e9
-        )
+def get_daily_weather(start_date, end_date, aoi):
+    try:
+        centroid = aoi.geometry().centroid(maxError=1)
+    except Exception as e:
+        centroid = aoi.geometry().bounds().centroid(maxError=1)
+    era5_land = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").filterDate(start_date, end_date)
+    def extract_point_value(image):
+        point_data = image.sample(region=centroid, scale=1).first()
+        temp = point_data.get('temperature_2m')
+        precip = point_data.get('total_precipitation_sum')
         return ee.Feature(None, {
-            'date': img.date().format('YYYY-MM-dd'),
-            'temperature_C': sampled_point.get('mean_2m_air_temperature_C')
+            'date': image.date().format('YYYY-MM-dd'),
+            'temperature_2m': temp,
+            'precipitation': precip
         })
+    feature_collection = era5_land.map(extract_point_value)
+    results = feature_collection.getInfo()['features']
 
-    temperature_fc = ee.FeatureCollection(era5_collection.map(sample_temperature))
-    temp_dict = temperature_fc.getInfo()
-    data = [{'date': f['properties']['date'], 'temperature_C': f['properties']['temperature_C']}
-            for f in temp_dict['features']]
-
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'])
-
-    return df
-
-
-def get_ERA5_precip(aoi, start_date, end_date):
-    era5_collection = ee.ImageCollection('ECMWF/ERA5/DAILY') \
-        .filterBounds(aoi) \
-        .filterDate(start_date, end_date) \
-        .select('total_precipitation')
-
-    # Sample the precipitation at the AOI for each image and create a FeatureCollection
-    def sample_precipitation(img):
-        sampled_point = img.reduceRegion(
-            reducer=ee.Reducer.mean(),
-            geometry=aoi,
-            scale=1000,
-            maxPixels=1e9
-        )
-        return ee.Feature(None, {
-            'date': img.date().format('YYYY-MM-dd'),
-            'total_precipitation_m': sampled_point.get('total_precipitation')
-        })
-
-    # Apply sampling and convert the results to a FeatureCollection
-    precipitation_fc = ee.FeatureCollection(era5_collection.map(sample_precipitation))
-
-    # Convert FeatureCollection to a list of dictionaries and then to a DataFrame
-    precip_dict = precipitation_fc.getInfo()  # Fetch the data as a dictionary
-    data = [{'date': f['properties']['date'], 'total_precipitation_m': f['properties']['total_precipitation_m']}
-            for f in precip_dict['features']]
-
-    # Convert list of dictionaries to a pandas DataFrame
-    df = pd.DataFrame(data)
-    df['date'] = pd.to_datetime(df['date'])  # Ensure date column is in datetime format
-
-    return df
+    weather_data = {}
+    for feature in results:
+        props = feature['properties']
+        temp_k = props.get('temperature_2m')
+        precip_m = props.get('precipitation')
+        if temp_k is not None and precip_m is not None:
+            weather_data[props['date']] = {
+                'temperature': temp_k - 273.15, 
+                'precipitation': precip_m * 1000 
+            }
+    return weather_data
 
 
 def get_sentinel2_dates(aoi, start_date, end_date, max_cloud_coverage=30):
