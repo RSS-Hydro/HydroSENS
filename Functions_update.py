@@ -21,36 +21,6 @@ import geemap
 from datetime import datetime
 
 
-def get_daily_weather(start_date, end_date, aoi):
-    try:
-        centroid = aoi.geometry().centroid(maxError=1)
-    except Exception as e:
-        centroid = aoi.geometry().bounds().centroid(maxError=1)
-    era5_land = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").filterDate(start_date, end_date)
-    def extract_point_value(image):
-        point_data = image.sample(region=centroid, scale=1).first()
-        temp = point_data.get('temperature_2m')
-        precip = point_data.get('total_precipitation_sum')
-        return ee.Feature(None, {
-            'date': image.date().format('YYYY-MM-dd'),
-            'temperature_2m': temp,
-            'precipitation': precip
-        })
-    feature_collection = era5_land.map(extract_point_value)
-    results = feature_collection.getInfo()['features']
-
-    weather_data = {}
-    for feature in results:
-        props = feature['properties']
-        temp_k = props.get('temperature_2m')
-        precip_m = props.get('precipitation')
-        if temp_k is not None and precip_m is not None:
-            weather_data[props['date']] = {
-                'temperature': temp_k - 273.15, 
-                'precipitation': precip_m * 1000 
-            }
-    return weather_data
-
 def CreateInt(array, reference, array_name, output):
     """
     CreateInt
