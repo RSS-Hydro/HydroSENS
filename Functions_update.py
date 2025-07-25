@@ -19,133 +19,37 @@ from scipy.interpolate import griddata
 import netCDF4 as nc
 import geemap
 from datetime import datetime
-import cdsapi
-
-def CDS_temp(date, output):
 
 
-    year = str(date.year)
-    month = str(date.month).zfill(2)
-    day = str(date.day).zfill(2)
+def get_daily_weather(start_date, end_date, aoi):
+    try:
+        centroid = aoi.geometry().centroid(maxError=1)
+    except Exception as e:
+        centroid = aoi.geometry().bounds().centroid(maxError=1)
+    era5_land = ee.ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR").filterDate(start_date, end_date)
+    def extract_point_value(image):
+        point_data = image.sample(region=centroid, scale=1).first()
+        temp = point_data.get('temperature_2m')
+        precip = point_data.get('total_precipitation_sum')
+        return ee.Feature(None, {
+            'date': image.date().format('YYYY-MM-dd'),
+            'temperature_2m': temp,
+            'precipitation': precip
+        })
+    feature_collection = era5_land.map(extract_point_value)
+    results = feature_collection.getInfo()['features']
 
-
-    dataset = "derived-era5-land-daily-statistics"
-    request = {
-        "variable": ["2m_temperature"],
-        "year": year,
-        "month": month,
-        "day": day,
-        "daily_statistic": "daily_mean",
-        "time_zone": "utc+00:00",
-        "frequency": "6_hourly",
-         "area": [10.5, -0.5, 5, 2] # country of Togo
-    }
-
-    client = cdsapi.Client()
-    target = output + f"/temp_{year}_{month}_{day}.nc"
-    client.retrieve(dataset, request, target)
-    return target
-
-
-def extract_data(nc_file_path):
-    with nc.Dataset(nc_file_path, mode='r') as nc_file:
-
-        lat = nc_file.variables['latitude'][:]
-        long = nc_file.variables['longitude'][:]
-        temp = nc_file.variables['t2m'][0, :, :]
-
-        lon_grid, lat_grid = np.meshgrid(long, lat)
-
-        lat_flat = lat_grid.flatten()
-        long_flat = lon_grid.flatten()
-        temp_flat = temp.flatten()
-
-        df = pd.DataFrame({'Latitude': lat_flat, 'Longitude': long_flat, 'Temperature': temp_flat})
-
-    return df
-
-def get_temp (shapefile, df):
-    aoi = geemap.shp_to_ee(shapefile).first()
-    coord = aoi.geometry().coordinates().getInfo()
-    longitudes, latitudes = zip(*coord[0])
-
-    centroid_long = np.mean(longitudes)
-    centroid_lat = np.mean(latitudes)
-
-    df['distance'] = np.sqrt((df['Latitude'] - centroid_lat)**2 + (df['Longitude'] - centroid_long)**2)
-    closest_row = df.loc[df['distance'].idxmin()]
-    temp = closest_row['Temperature']
-    temp = np.subtract(temp,273.15)
-    return temp
-
-
-def CDS_precip(date, output):
-
-
-    year = str(date.year)
-    month = str(date.month).zfill(2)
-    day = str(date.day).zfill(2)
-
-    dataset = "derived-era5-single-levels-daily-statistics"
-    request = {
-        "product_type": "reanalysis",
-        "variable": ["total_precipitation"],
-        "year": year,
-        "month": month,
-        "day": day,
-        "daily_statistic": "daily_mean",
-        "time_zone": "utc+00:00",
-        "frequency": "6_hourly",
-        "area": [10.5, -0.5, 5, 2] # country of Togo
-    }
-
-
-    client = cdsapi.Client()
-    target = output + f"/precip_{year}_{month}_{day}.nc"
-    client.retrieve(dataset, request, target)
-    return target
-
-def extract_p_data(nc_file_path):
-    with nc.Dataset(nc_file_path, mode='r') as nc_file:
-        lat = nc_file.variables['latitude'][:]
-        long = nc_file.variables['longitude'][:]
-
-        if 'tp' in nc_file.variables:
-            tp_var = nc_file.variables['tp']
-            shape = tp_var.shape
-
-            if len(shape) == 3 and shape[0] > 0:
-                temp = tp_var[0, :, :]
-            elif len(shape) == 2:
-                temp = tp_var[:, :]
-            else:
-                temp = np.zeros((len(lat), len(long)))
-        else:
-            temp = np.zeros((len(lat), len(long)))
-
-        lon_grid, lat_grid = np.meshgrid(long, lat)
-
-        lat_flat = lat_grid.flatten()
-        long_flat = lon_grid.flatten()
-        temp_flat = temp.flatten()
-
-        df = pd.DataFrame({'Latitude': lat_flat, 'Longitude': long_flat, 'Precipitation': temp_flat})
-
-    return df
-
-def get_p (shapefile, df):
-    aoi = geemap.shp_to_ee(shapefile).first()
-    coord = aoi.geometry().coordinates().getInfo()
-    longitudes, latitudes = zip(*coord[0])
-
-    centroid_long = np.mean(longitudes)
-    centroid_lat = np.mean(latitudes)
-
-    df['distance'] = np.sqrt((df['Latitude'] - centroid_lat)**2 + (df['Longitude'] - centroid_long)**2)
-    closest_row = df.loc[df['distance'].idxmin()]
-    p = closest_row['Precipitation']
-    p = np.divide(p,1000)
-    return p
+    weather_data = {}
+    for feature in results:
+        props = feature['properties']
+        temp_k = props.get('temperature_2m')
+        precip_m = props.get('precipitation')
+        if temp_k is not None and precip_m is not None:
+            weather_data[props['date']] = {
+                'temperature': temp_k - 273.15, 
+                'precipitation': precip_m * 1000 
+            }
+    return weather_data
 
 def CreateInt(array, reference, array_name, output):
     """
