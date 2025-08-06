@@ -24,11 +24,7 @@ from datetime import datetime
 def writeTCI(red_array, green_array, blue_array, reference, array_name, output):
     output_filename = os.path.join(output, array_name + ".tif")
     driver = gdal.GetDriverByName("GTiff")
-    output_raster = driver.Create(output_filename,
-                                  reference.RasterXSize,
-                                  reference.RasterYSize,
-                                  3,
-                                  gdal.GDT_Float64)
+    output_raster = driver.Create(output_filename, reference.RasterXSize, reference.RasterYSize, 3, gdal.GDT_Float64)
 
     output_raster.SetProjection(reference.GetProjection())
     output_raster.SetGeoTransform(reference.GetGeoTransform())
@@ -444,6 +440,7 @@ def doMESMA(class_list,img, trim_lib):
     #Perform shade normalization
     out_shade = shade_normalisation.ShadeNormalisation.execute(out_fractions, shade_band=-1)
     return out_shade
+
 
 
 
